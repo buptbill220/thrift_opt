@@ -6,7 +6,7 @@ package echo
 import (
 	"bytes"
 	"fmt"
-	"code.byted.org/gopkg/thrift"
+    "git.apache.org/thrift.git/lib/go/thrift"
 )
 
 // (needed to ensure safety because of naive import list construction.)

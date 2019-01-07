@@ -7,7 +7,7 @@ import (
 	"echo"
 	"flag"
 	"fmt"
-	"code.byted.org/gopkg/thrift"
+    "git.apache.org/thrift.git/lib/go/thrift"
 	"math"
 	"net"
 	"net/url"

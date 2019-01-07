@@ -5,7 +5,7 @@ import (
 	"unsafe"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
-	"github.com/buptbill220/gooptlib"
+	"github.com/buptbill220/gooptlib/gooptlib"
 )
 
 // 保证buffer不被reuse，为了较少拷贝，string, byte字段直接使用buffer
@@ -96,7 +96,7 @@ func (p *TFastFrameBinaryProtocol) WriteMessageBegin(name string, typeId thrift.
 		p.WriteI32(seqId)
 	} else {
 		p.WriteString(name)
-		p.WriteByte(byte(typeId))
+		p.WriteByte(int8(typeId))
 		p.WriteI32(seqId)
 	}
 	return nil
@@ -202,13 +202,13 @@ func (p *TFastFrameBinaryProtocol) WriteSetEnd() error {
 }
 
 func (p *TFastFrameBinaryProtocol) WriteBool(value bool) error {
-	return p.WriteByte(gooptlib.Bool2Byte(value))
+	return p.WriteByte(int8(gooptlib.Bool2Byte(value)))
 }
 
-func (p *TFastFrameBinaryProtocol) WriteByte(value byte) error {
+func (p *TFastFrameBinaryProtocol) WriteByte(value int8) error {
 	buffer := p.wBuf
 	rwIdx := buffer.rwIdx
-	buffer.b[rwIdx] = value
+	buffer.b[rwIdx] = byte(value)
 	buffer.rwIdx++
 	return nil
 }
@@ -417,8 +417,8 @@ func (p *TFastFrameBinaryProtocol) ReadBool() (value bool, err error) {
 	return
 }
 
-func (p *TFastFrameBinaryProtocol) ReadByte() (value byte, err error) {
-	value = p.rBuf.b[p.rBuf.rwIdx]
+func (p *TFastFrameBinaryProtocol) ReadByte() (value int8, err error) {
+	value = int8(p.rBuf.b[p.rBuf.rwIdx])
 	p.rBuf.rwIdx++
 	return
 }

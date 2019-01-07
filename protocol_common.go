@@ -19,7 +19,7 @@ var (
 	smallReadCount    = 16
 	middleReadCount   = 64
 	maxReadCount      = 1024
-	limitReadBytes    = thrift.SAFE_BUFFER_SIZE_LIM
+	limitReadBytes    = 1024 * 1024 * 100
 	minBigDataLen     = 64 * 1024
 	minBufferLen      = 64
 	maxBufferLen      = 1024 * 1024

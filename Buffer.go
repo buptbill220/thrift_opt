@@ -2,7 +2,7 @@ package thrift_opt
 
 import (
 	"sync"
-	"github.com/buptbill220/gooptlib"
+	"github.com/buptbill220/gooptlib/gooptlib"
 )
 
 var (

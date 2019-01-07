@@ -3,7 +3,7 @@ package thrift_opt
 import (
 	"fmt"
 	"unsafe"
-	"github.com/buptbill220/gooptlib"
+	"github.com/buptbill220/gooptlib/gooptlib"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 )
@@ -105,7 +105,7 @@ func (p *TFastBufferedBinaryProtocol) WriteMessageBegin(name string, typeId thri
 		p.WriteI32(seqId)
 	} else {
 		p.WriteString(name)
-		p.WriteByte(byte(typeId))
+		p.WriteByte(int8(typeId))
 		p.WriteI32(seqId)
 	}
 	return nil
@@ -226,13 +226,13 @@ func (p *TFastBufferedBinaryProtocol) WriteSetEnd() error {
 }
 
 func (p *TFastBufferedBinaryProtocol) WriteBool(value bool) error {
-	return p.WriteByte(gooptlib.Bool2Byte(value))
+	return p.WriteByte(int8(gooptlib.Bool2Byte(value)))
 }
 
-func (p *TFastBufferedBinaryProtocol) WriteByte(value byte) error {
+func (p *TFastBufferedBinaryProtocol) WriteByte(value int8) error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
-	buffer.b[rwIdx] = value
+	buffer.b[rwIdx] = byte(value)
 	buffer.w++
 	return nil
 }
@@ -399,7 +399,7 @@ func (p *TFastBufferedBinaryProtocol) ReadStructEnd() error {
 }
 
 func (p *TFastBufferedBinaryProtocol) ReadFieldBegin() (name string, typeId thrift.TType, seqId int16, err error) {
-	var t byte
+	var t int8
 	t, err = p.ReadByte()
 	if err != nil {
 		return
@@ -479,14 +479,14 @@ func (p *TFastBufferedBinaryProtocol) ReadBool() (value bool, err error) {
 	return
 }
 
-func (p *TFastBufferedBinaryProtocol) ReadByte() (value byte, err error) {
+func (p *TFastBufferedBinaryProtocol) ReadByte() (value int8, err error) {
 	err = p.ReadAtLeastN(1)
 	if err != nil {
 		return
 	}
 	buffer := p.rBuf
 	rIdx := buffer.r
-	value = buffer.b[rIdx]
+	value = int8(buffer.b[rIdx])
 	buffer.r++
 	return
 }

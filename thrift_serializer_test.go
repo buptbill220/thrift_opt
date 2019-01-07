@@ -11,20 +11,18 @@ import (
 	"git.apache.org/thrift.git/lib/go/thrift"
 	//"github.com/stretchr/testify/assert"
 	"testing"
-	"github.com/zhiyu-he/go_performance/benchmark/echo"
+	"github.com/buptbill220/thrift_opt/echo"
 	//"fmt"
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"github.com/buptbill220/gooptlib"
+	"github.com/buptbill220/gooptlib/gooptlib"
 )
 
 var (
 	normal *thrift.TSerializer
-	opt    *thrift.TSerializer
 	opt1    *thrift.TSerializer
 
 	normalD *thrift.TDeserializer
-	optD    *thrift.TDeserializer
 	optD1    *thrift.TDeserializer
 
 
@@ -83,19 +81,6 @@ func init() {
 		Protocol:  p4,
 	}
 
-	//=======hezhiyu frame protocol
-
-	t2 := thrift.NewTMemoryBufferLen(512)
-	p2 := thrift.NewTFastFrameBinaryProtocolFactoryDefault(512).GetProtocol(t2)
-	opt = &thrift.TSerializer{
-		Transport: t2,
-		Protocol:  p2,
-	}
-	optD = &thrift.TDeserializer{
-		Transport: t2,
-		Protocol:  p2,
-	}
-
 	//======fangming frame protocol
 
 	t3 := thrift.NewTMemoryBufferLen(512)
@@ -130,11 +115,10 @@ func init() {
 
 func TestEqual(t *testing.T) {
 	// test serializer equal
-	dat, _:= opt.Write(req)
 	//assert.Equal(t, byteReq, dat)
 
 	dat1, _:= opt1.Write(req)
-	fmt.Printf("frame protocol\n%#v\n%#v\n%#v\n", byteReq, dat, dat1)
+	fmt.Printf("frame protocol\n%#v\n\n%#v\n", byteReq, dat1)
 	//assert.Equal(t, byteReq, dat1)
 
 	//test de-serializer equal
@@ -142,7 +126,6 @@ func TestEqual(t *testing.T) {
 	reqOPT := &echo.EchoReq{}
 	reqOPT1 := &echo.EchoReq{}
 
-	optD.Read(reqOPT, byteReq)
 	normalD.Read(reqNormal, byteReq)
 
 	optD1.Read(reqOPT1, byteReq)
@@ -180,10 +163,6 @@ func apacheFrameThriftWrite() {
 	normal.Write(req)
 }
 
-func optHzyFrameThriftWrite() {
-	opt.Write(req)
-}
-
 func optFmFrameThriftWrite() {
 	opt1.Write(req)
 }
@@ -199,11 +178,6 @@ func optFmBufferedThriftWrite() {
 func apacheFrameThriftRead(dat []byte) {
 	normalD.Transport.Close()
 	normalD.Read(req, dat)
-}
-
-func optHzyFrameThriftRead(dat []byte) {
-	optD.Transport.Close()
-	optD.Read(req, dat)
 }
 
 func optFmFrameThriftRead(dat []byte) {
@@ -224,12 +198,6 @@ func optFmBufferedThriftRead(dat []byte) {
 func BenchmarkApacheFrameWrite(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		apacheFrameThriftWrite()
-	}
-}
-
-func BenchmarkHzyOPTFrameWrite(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		optHzyFrameThriftWrite()
 	}
 }
 
@@ -254,12 +222,6 @@ func BenchmarkFmOptBufferedWrite(b *testing.B) {
 func BenchmarkApacheFrameRead(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		apacheFrameThriftRead(byteReq)
-	}
-}
-
-func BenchmarkHzyOptFrameRead(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		optHzyFrameThriftRead(byteReq)
 	}
 }
 
