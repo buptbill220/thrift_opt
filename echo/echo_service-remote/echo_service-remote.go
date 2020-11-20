@@ -4,16 +4,17 @@
 package main
 
 import (
-	"echo"
 	"flag"
 	"fmt"
-    "git.apache.org/thrift.git/lib/go/thrift"
 	"math"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	
+	"github.com/buptbill220/thrift_opt/echo"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 func Usage() {

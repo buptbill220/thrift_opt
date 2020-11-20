@@ -1,11 +1,11 @@
 package thrift_opt
 
 import (
+	"context"
 	"fmt"
 	"unsafe"
-	"github.com/buptbill220/gooptlib/gooptlib"
 
-	"git.apache.org/thrift.git/lib/go/thrift"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 // 保证buffer不被reuse，为了较少拷贝，string, byte字段直接使用buffer
@@ -131,7 +131,7 @@ func (p *TFastBufferedBinaryProtocol) WriteFieldBegin(name string, typeId thrift
 	valSize := GetTTypeSize(typeId) + 3 + 1
 	/*
 	if rwIdx+valSize > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, valSize)
+		strings.GrowSlice(&buffer.b, rwIdx, valSize)
 	}
 	*/
 	if err := p.CheckGrowFlush(&buffer.b, rwIdx, valSize); err != nil {
@@ -153,6 +153,10 @@ func (p *TFastBufferedBinaryProtocol) WriteFieldEnd() error {
 func (p *TFastBufferedBinaryProtocol) WriteFieldStop() error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
+	if err := p.CheckGrowFlush(&buffer.b, rwIdx, 1); err != nil {
+		return err
+	}
+	rwIdx = buffer.w
 	buffer.b[rwIdx] = thrift.STOP
 	buffer.w++
 	return nil
@@ -162,10 +166,10 @@ func (p *TFastBufferedBinaryProtocol) WriteMapBegin(keyType thrift.TType, valueT
 	buffer := p.wBuf
 	rwIdx := buffer.w
 	// 提前预估map可能的大小，提前分配好; 6 => ktype, vtyle, size; 8考虑到可能map<int64, map>情况，需要把该map前置key考虑进去
-	valSize := (GetTTypeSize(keyType) + GetTTypeSize(valueType)) * size + 6 + 8
+	valSize := (GetTTypeSize(keyType) + GetTTypeSize(valueType)) * size + 6 + 32
 	/*
 	if rwIdx+valSize > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, valSize)
+		strings.GrowSlice(&buffer.b, rwIdx, valSize)
 	}
 	*/
 	if err := p.CheckGrowFlush(&buffer.b, rwIdx, valSize); err != nil {
@@ -176,10 +180,8 @@ func (p *TFastBufferedBinaryProtocol) WriteMapBegin(keyType thrift.TType, valueT
 	buffer.b[rwIdx] = byte(keyType)
 	buffer.b[rwIdx+1] = byte(valueType)
 	val := uint32(size)
-	buffer.b[rwIdx+2] = byte(val >> 24)
-	buffer.b[rwIdx+3] = byte(val >> 16)
-	buffer.b[rwIdx+4] = byte(val >> 8)
-	buffer.b[rwIdx+5] = byte(val)
+	var bytes [4]byte = [4]byte{byte(val >> 24), byte(val >> 16), byte(val >> 8), byte(val)}
+	*(*uint32)(unsafe.Pointer(&buffer.b[rwIdx+2])) = *(*uint32)(unsafe.Pointer(&bytes[0]))
 	buffer.w += 6
 	return nil
 }
@@ -191,11 +193,11 @@ func (p *TFastBufferedBinaryProtocol) WriteMapEnd() error {
 func (p *TFastBufferedBinaryProtocol) WriteListBegin(elemType thrift.TType, size int) error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
-	// 提前预估list可能的大小，提前分配好; 5 => vtyle, size; 8考虑到可能map<int64, list>情况，需要把该list前置key考虑进去
-	valSize := GetTTypeSize(elemType) * size + 5 + 8
+	// 提前预估list可能的大小，提前分配好; 5 => vtyle, size; 32考虑到可能map<int64, list>情况，需要把该list前置key考虑进去
+	valSize := GetTTypeSize(elemType) * size + 5 + 32
 	/*
 	if rwIdx+valSize > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, valSize)
+		strings.GrowSlice(&buffer.b, rwIdx, valSize)
 	}
 	*/
 	if err := p.CheckGrowFlush(&buffer.b, rwIdx, valSize); err != nil {
@@ -204,10 +206,8 @@ func (p *TFastBufferedBinaryProtocol) WriteListBegin(elemType thrift.TType, size
 	rwIdx = buffer.w
 	buffer.b[rwIdx] = byte(elemType)
 	val := uint32(size)
-	buffer.b[rwIdx+1] = byte(val >> 24)
-	buffer.b[rwIdx+2] = byte(val >> 16)
-	buffer.b[rwIdx+3] = byte(val >> 8)
-	buffer.b[rwIdx+4] = byte(val)
+	var bytes [4]byte = [4]byte{byte(val >> 24), byte(val >> 16), byte(val >> 8), byte(val)}
+	*(*uint32)(unsafe.Pointer(&buffer.b[rwIdx+1])) = *(*uint32)(unsafe.Pointer(&bytes[0]))
 	buffer.w += 5
 	return nil
 }
@@ -226,12 +226,17 @@ func (p *TFastBufferedBinaryProtocol) WriteSetEnd() error {
 }
 
 func (p *TFastBufferedBinaryProtocol) WriteBool(value bool) error {
-	return p.WriteByte(int8(gooptlib.Bool2Byte(value)))
+	return p.WriteByte(Bool2Byte(value))
 }
 
 func (p *TFastBufferedBinaryProtocol) WriteByte(value int8) error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
+	if rwIdx+1 > cap(buffer.b) {
+		if err := p.CheckGrowFlush(&buffer.b, rwIdx, 1); err != nil {
+			return err
+		}
+	}
 	buffer.b[rwIdx] = byte(value)
 	buffer.w++
 	return nil
@@ -240,6 +245,11 @@ func (p *TFastBufferedBinaryProtocol) WriteByte(value int8) error {
 func (p *TFastBufferedBinaryProtocol) WriteI16(value int16) error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
+	if rwIdx+2 > cap(buffer.b) {
+		if err := p.CheckGrowFlush(&buffer.b, rwIdx, 2); err != nil {
+			return err
+		}
+	}
 	val := uint16(value)
 	buffer.b[rwIdx] = byte(val >> 8)
 	buffer.b[rwIdx+1] = byte(val)
@@ -250,11 +260,14 @@ func (p *TFastBufferedBinaryProtocol) WriteI16(value int16) error {
 func (p *TFastBufferedBinaryProtocol) WriteI32(value int32) error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
+	if rwIdx+4 > cap(buffer.b) {
+		if err := p.CheckGrowFlush(&buffer.b, rwIdx, 4); err != nil {
+			return err
+		}
+	}
 	val := uint32(value)
-	buffer.b[rwIdx] = byte(val >> 24)
-	buffer.b[rwIdx+1] = byte(val >> 16)
-	buffer.b[rwIdx+2] = byte(val >> 8)
-	buffer.b[rwIdx+3] = byte(val)
+	var bytes [4]byte = [4]byte{byte(val >> 24), byte(val >> 16), byte(val >> 8), byte(val)}
+	*(*uint32)(unsafe.Pointer(&buffer.b[rwIdx])) = *(*uint32)(unsafe.Pointer(&bytes[0]))
 	buffer.w += 4
 	return nil
 }
@@ -262,15 +275,14 @@ func (p *TFastBufferedBinaryProtocol) WriteI32(value int32) error {
 func (p *TFastBufferedBinaryProtocol) WriteI64(value int64) error {
 	buffer := p.wBuf
 	rwIdx := buffer.w
+	if rwIdx+8 > cap(buffer.b) {
+		if err := p.CheckGrowFlush(&buffer.b, rwIdx, 8); err != nil {
+			return err
+		}
+	}
 	val := uint64(value)
-	buffer.b[rwIdx] = byte(val >> 56)
-	buffer.b[rwIdx+1] = byte(val >> 48)
-	buffer.b[rwIdx+2] = byte(val >> 40)
-	buffer.b[rwIdx+3] = byte(val >> 32)
-	buffer.b[rwIdx+4] = byte(val >> 24)
-	buffer.b[rwIdx+5] = byte(val >> 16)
-	buffer.b[rwIdx+6] = byte(val >> 8)
-	buffer.b[rwIdx+7] = byte(val)
+	var bytes [8]byte = [8]byte{byte(val >> 56), byte(val >> 48), byte(val >> 40), byte(val >> 32), byte(val >> 24), byte(val >> 16), byte(val >> 8), byte(val)}
+	*(*uint64)(unsafe.Pointer(&buffer.b[rwIdx])) = *(*uint64)(unsafe.Pointer(&bytes[0]))
 	buffer.w += 8
 	return nil
 }
@@ -288,23 +300,18 @@ func (p *TFastBufferedBinaryProtocol) WriteString(value string) error {
 		isBigData = false
 		growLen += len(value)
 	}
-	/*
-	if rwIdx+growLen > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, growLen)
-	}
-	*/
-	if err := p.CheckGrowFlush(&buffer.b, rwIdx, growLen); err != nil {
-		return err
+	if rwIdx + growLen > cap(buffer.b) {
+		if err := p.CheckGrowFlush(&buffer.b, rwIdx, growLen); err != nil {
+			return err
+		}
 	}
 	rwIdx = buffer.w
 	val := uint32(len(value))
-	buffer.b[rwIdx] = byte(val >> 24)
-	buffer.b[rwIdx+1] = byte(val >> 16)
-	buffer.b[rwIdx+2] = byte(val >> 8)
-	buffer.b[rwIdx+3] = byte(val)
+	var bytes [4]byte = [4]byte{byte(val >> 24), byte(val >> 16), byte(val >> 8), byte(val)}
+	*(*uint32)(unsafe.Pointer(&buffer.b[rwIdx])) = *(*uint32)(unsafe.Pointer(&bytes[0]))
 	buffer.w += 4
 	if isBigData {
-		p.wBigData = gooptlib.Str2Bytes(value)
+		p.wBigData = Str2Bytes(value)
 		p.wBigDataPos = buffer.w
 	} else {
 		buffer.w += copy(buffer.b[rwIdx + 4:], value)
@@ -323,7 +330,7 @@ func (p *TFastBufferedBinaryProtocol) WriteBinary(value []byte) error {
 	}
 	/*
 	if rwIdx+growLen > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, growLen)
+		strings.GrowSlice(&buffer.b, rwIdx, growLen)
 	}
 	*/
 	if err := p.CheckGrowFlush(&buffer.b, rwIdx, growLen); err != nil {
@@ -331,10 +338,8 @@ func (p *TFastBufferedBinaryProtocol) WriteBinary(value []byte) error {
 	}
 	rwIdx = buffer.w
 	val := uint32(len(value))
-	buffer.b[rwIdx] = byte(val >> 24)
-	buffer.b[rwIdx+1] = byte(val >> 16)
-	buffer.b[rwIdx+2] = byte(val >> 8)
-	buffer.b[rwIdx+3] = byte(val)
+	var bytes [4]byte = [4]byte{byte(val >> 24), byte(val >> 16), byte(val >> 8), byte(val)}
+	*(*uint32)(unsafe.Pointer(&buffer.b[rwIdx])) = *(*uint32)(unsafe.Pointer(&bytes[0]))
 	buffer.w += 4
 	if isBigData {
 		p.wBigData = value
@@ -426,7 +431,9 @@ func (p *TFastBufferedBinaryProtocol) ReadMapBegin() (kType, vType thrift.TType,
 
 	kType = thrift.TType(buffer.b[rIdx])
 	vType = thrift.TType(buffer.b[rIdx+1])
-	size32 := int32(uint32(buffer.b[rIdx+5]) | uint32(buffer.b[rIdx+4])<<8 | uint32(buffer.b[rIdx+3])<<16 | uint32(buffer.b[rIdx+2])<<24)
+	ptr := uintptr(unsafe.Pointer(&buffer.b[rIdx+2]))
+	size32 := int32(uint32(*(*byte)(unsafe.Pointer(ptr+3))) | uint32(*(*byte)(unsafe.Pointer(ptr+2)))<<8 |
+		uint32(*(*byte)(unsafe.Pointer(ptr+1)))<<16 | uint32(*(*byte)(unsafe.Pointer(ptr)))<<24)
 	buffer.r += 6
 	if size32 < 0 || size32 > int32(limitReadBytes) {
 		err = invalidDataLength
@@ -449,7 +456,9 @@ func (p *TFastBufferedBinaryProtocol) ReadListBegin() (elemType thrift.TType, si
 	rIdx := buffer.r
 
 	elemType = thrift.TType(buffer.b[rIdx])
-	size32 := int32(uint32(buffer.b[rIdx+4]) | uint32(buffer.b[rIdx+3])<<8 | uint32(buffer.b[rIdx+2])<<16 | uint32(buffer.b[rIdx+1])<<24)
+	ptr := uintptr(unsafe.Pointer(&buffer.b[rIdx+1]))
+	size32 := int32(uint32(*(*byte)(unsafe.Pointer(ptr+3))) | uint32(*(*byte)(unsafe.Pointer(ptr+2)))<<8 |
+		uint32(*(*byte)(unsafe.Pointer(ptr+1)))<<16 | uint32(*(*byte)(unsafe.Pointer(ptr)))<<24)
 	buffer.r += 5
 	if size32 < 0 || size32 > int32(limitReadBytes) {
 		err = invalidDataLength
@@ -511,7 +520,9 @@ func (p *TFastBufferedBinaryProtocol) ReadI32() (value int32, err error) {
 	}
 	buffer := p.rBuf
 	rIdx := buffer.r
-	value = int32(uint32(buffer.b[rIdx+3]) | uint32(buffer.b[rIdx+2])<<8 | uint32(buffer.b[rIdx+1])<<16 | uint32(buffer.b[rIdx])<<24)
+	ptr := uintptr(unsafe.Pointer(&buffer.b[rIdx]))
+	value = int32(uint32(*(*byte)(unsafe.Pointer(ptr+3))) | uint32(*(*byte)(unsafe.Pointer(ptr+2)))<<8 |
+		uint32(*(*byte)(unsafe.Pointer(ptr+1)))<<16 | uint32(*(*byte)(unsafe.Pointer(ptr)))<<24)
 	buffer.r += 4
 	return
 }
@@ -524,7 +535,11 @@ func (p *TFastBufferedBinaryProtocol) ReadI64() (value int64, err error) {
 	buffer := p.rBuf
 	rIdx := buffer.r
 
-	value = int64(uint64(buffer.b[rIdx+7]) | uint64(buffer.b[rIdx+6])<<8 | uint64(buffer.b[rIdx+5])<<16 | uint64(buffer.b[rIdx+4])<<24 | uint64(buffer.b[rIdx+3])<<32 | uint64(buffer.b[rIdx+2])<<40 | uint64(buffer.b[rIdx+1])<<48 | uint64(buffer.b[rIdx])<<56)
+	ptr := uintptr(unsafe.Pointer(&buffer.b[rIdx]))
+	value = int64(uint64(*(*byte)(unsafe.Pointer(ptr+7))) | uint64(*(*byte)(unsafe.Pointer(ptr+6)))<<8 |
+		uint64(*(*byte)(unsafe.Pointer(ptr+5)))<<16 | uint64(*(*byte)(unsafe.Pointer(ptr+4)))<<24 |
+		uint64(*(*byte)(unsafe.Pointer(ptr+3)))<<32 | uint64(*(*byte)(unsafe.Pointer(ptr+2)))<<40 |
+		uint64(*(*byte)(unsafe.Pointer(ptr+1)))<<48 | uint64(*(*byte)(unsafe.Pointer(ptr)))<<56)
 	buffer.r += 8
 	return
 }
@@ -537,7 +552,11 @@ func (p *TFastBufferedBinaryProtocol) ReadDouble() (value float64, err error) {
 
 	buffer := p.rBuf
 	rIdx := buffer.r
-	valUint64 := uint64(buffer.b[rIdx+7]) | uint64(buffer.b[rIdx+6])<<8 | uint64(buffer.b[rIdx+5])<<16 | uint64(buffer.b[rIdx+4])<<24 | uint64(buffer.b[rIdx+3])<<32 | uint64(buffer.b[rIdx+2])<<40 | uint64(buffer.b[rIdx+1])<<48 | uint64(buffer.b[rIdx])<<56
+	ptr := uintptr(unsafe.Pointer(&buffer.b[rIdx]))
+	valUint64 := uint64(uint64(*(*byte)(unsafe.Pointer(ptr+7))) | uint64(*(*byte)((unsafe.Pointer(ptr+6))))<<8 |
+		uint64(*(*byte)(unsafe.Pointer(ptr+5)))<<16 | uint64(*(*byte)(unsafe.Pointer(ptr+4)))<<24 |
+		uint64(*(*byte)(unsafe.Pointer(ptr+3)))<<32 | uint64(*(*byte)(unsafe.Pointer(ptr+2)))<<40 |
+		uint64(*(*byte)(unsafe.Pointer(ptr+1)))<<48 | uint64(*(*byte)(unsafe.Pointer(ptr)))<<56)
 	buffer.r += 8
 	value = *(*float64)(unsafe.Pointer(&valUint64))
 	return
@@ -558,7 +577,7 @@ func (p *TFastBufferedBinaryProtocol) ReadString() (value string, err error) {
 	if err != nil {
 		return
 	}
-	value = gooptlib.Bytes2Str(dat)
+	value = Bytes2Str(dat)
 	return
 }
 
@@ -579,12 +598,12 @@ func (p *TFastBufferedBinaryProtocol) ReadBinary() (value []byte, err error) {
 	return
 }
 
-func (p *TFastBufferedBinaryProtocol) Flush() (err error) {
+func (p *TFastBufferedBinaryProtocol) Flush(ctx context.Context) (err error) {
 	buffer := p.wBuf
 	wPos := 0
     	i := 0
 	totalSize := buffer.w + len(p.wBigData)
-	count := gooptlib.Min((totalSize >> 15) + smallWriteCount, maxWriteCount)
+	count := Min((totalSize >> 15) + smallWriteCount, maxWriteCount)
 	if p.wBigDataPos == 0 {
 		for err == nil && wPos < totalSize && count > 0 {
 			i, err = p.t.Write(buffer.b[wPos:buffer.w])
@@ -606,7 +625,7 @@ func (p *TFastBufferedBinaryProtocol) Flush() (err error) {
 		}
 	}
 
-	p.t.Flush()
+	p.t.Flush(ctx)
 	p.ResetWriter()
 	if count <= 0 {
 		err = rwCountError
@@ -631,7 +650,7 @@ func (p *TFastBufferedBinaryProtocol) readStringBody(size int) (value string, er
 	if err != nil {
 		return
 	}
-	value = gooptlib.Bytes2Str(dat)
+	value = Bytes2Str(dat)
 	return
 }
 
@@ -722,7 +741,7 @@ func (p *TFastBufferedBinaryProtocol) ReadAll(buf []byte) (err error ){
 			tmpBuf = rBuf.b[0:]
 		}
 		nn := len(buf) - remain
-		count := gooptlib.Min((nn >> 15) + middleReadCount, maxReadCount)
+		count := Min((nn >> 15) + middleReadCount, maxReadCount)
 		i := 0
 		for err == nil && nn > 0 && count > 0 {
 			i, err = p.t.Read(tmpBuf[wPos:])
@@ -752,14 +771,16 @@ func (p *TFastBufferedBinaryProtocol) ReadAll(buf []byte) (err error ){
 	return unexpectedEof
 }
 
+var _ctx = context.Background()
+
 func (p *TFastBufferedBinaryProtocol) CheckGrowFlush(buf *[]byte, curLen, growLen int) (err error ){
 	capLen := cap(*buf)
 	if curLen + growLen > capLen {
 		// 避免大段内存拷贝
 		if curLen >= (minBigDataLen >> 1) {
-			err = p.Flush()
+			err = p.Flush(_ctx)
 		} else {
-			gooptlib.GrowSlice(buf, curLen, growLen)
+			GrowSlice(buf, curLen, growLen)
 		}
 	}
 	return
