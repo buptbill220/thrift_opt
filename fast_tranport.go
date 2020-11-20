@@ -1,7 +1,8 @@
 package thrift_opt
 
 import (
-	"git.apache.org/thrift.git/lib/go/thrift"
+	"context"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 /*
@@ -45,8 +46,8 @@ func (p *FastTransport) Close() (err error) {
 	return p.tp.Close()
 }
 
-func (p *FastTransport) Flush() error {
-	return p.tp.Flush()
+func (p *FastTransport) Flush(ctx context.Context) error {
+	return p.tp.Flush(ctx)
 }
 
 func (p *FastTransport) Read(buf []byte) (int, error) {

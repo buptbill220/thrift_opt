@@ -1,8 +1,9 @@
 package thrift_opt
 
 import (
+	"context"
 	"sync"
-	"github.com/buptbill220/gooptlib/gooptlib"
+	"unsafe"
 )
 
 var (
@@ -15,8 +16,8 @@ func GetBinaryBuffer(size int) *BinaryBuffer {
 		brw.Clear()
 		return brw
 	}
-	size = gooptlib.Max(size, minBufferLen)
-	size = gooptlib.Min(size, maxBufferLen)
+	size = Max(size, minBufferLen)
+	size = Min(size, maxBufferLen)
 	return  &BinaryBuffer{
 		b:         make([]byte, size),
 		r:         0,
@@ -39,6 +40,14 @@ type FrameBuffer struct {
 	frameSize int // frame size
 }
 
+func (f *FrameBuffer) Size() int {
+	return len(f.b)
+}
+
+func (f *FrameBuffer) Clear() {
+	f.b = nil
+}
+
 func NewFrameBuffer(buf []byte) *FrameBuffer {
 	return &FrameBuffer{
 		b:         buf,
@@ -48,8 +57,8 @@ func NewFrameBuffer(buf []byte) *FrameBuffer {
 }
 
 func NewFrameBuffer2(size int) *FrameBuffer {
-	size = gooptlib.Max(size, minBufferLen)
-	size = gooptlib.Min(size, maxBufferLen)
+	size = Max(size, minBufferLen)
+	size = Min(size, maxBufferLen)
 	return &FrameBuffer{
 		b:         make([]byte, size),
 		rwIdx:     0,
@@ -60,6 +69,7 @@ func NewFrameBuffer2(size int) *FrameBuffer {
 type BinaryBuffer struct {
 	b       []byte
 	r,w     int
+	ptr     uintptr
 	err     error
 }
 
@@ -68,26 +78,92 @@ func NewBinaryBuffer(buf []byte) *BinaryBuffer {
 		b:         buf,
 		r:         0,
 		w:         0,
+		ptr:       uintptr(unsafe.Pointer(&buf[0])),
 	}
 }
 
 func NewBinaryBuffer2(size int) *BinaryBuffer {
-	size = gooptlib.Max(size, minBufferLen)
-	size = gooptlib.Min(size, maxBufferLen)
+	size = Max(size, minBufferLen)
+	size = Min(size, maxBufferLen)
+	buf := make([]byte, size)
 	return &BinaryBuffer{
-		b:         make([]byte, size),
+		b:         buf,
 		r:         0,
 		w:         0,
+		ptr:       uintptr(unsafe.Pointer(&buf[0])),
 	}
 }
 
-func (buffer *BinaryBuffer) Clear() {
-	buffer.r = 0
-	buffer.w = 0
-	buffer.err = nil
+func (p *BinaryBuffer) Clear() {
+	p.r = 0
+	p.w = 0
+	p.err = nil
 }
 
-func (buffer *FrameBuffer) Clear() {
-	buffer.rwIdx = 0
-	buffer.frameSize = 0
+func (p *BinaryBuffer) Free() {
+	p.b = nil
+	p.r = 0
+	p.w = 0
+	p.err = nil
+	p.ptr = 0
+}
+
+func (p *BinaryBuffer) Write(buf []byte) (n int, err error) {
+	capLen := cap(p.b)
+	if p.w + len(buf) > capLen {
+		GrowSlice(&p.b, p.w, len(buf))
+	}
+	p.w += copy(p.b[p.w:], buf)
+	return len(buf), nil
+}
+
+func (p *BinaryBuffer) Read(buf []byte) (n int, err error) {
+	n = copy(buf, p.b[p.r:p.r+len(buf)])
+	p.r += n
+	if n != len(buf) {
+		err = unexpectedEof
+	}
+	return
+}
+
+func (p *BinaryBuffer) FastWrite(buf []byte) (n int, err error) {
+	p.b = buf[0:cap(buf)]
+	p.r = 0
+	p.w = len(buf)
+	p.err = nil
+	p.ptr = uintptr(unsafe.Pointer(&buf[0]))
+	return p.w, nil
+}
+
+func (p *BinaryBuffer) Size() int {
+	return p.w - p.r
+}
+
+func (p *BinaryBuffer) Cap() int {
+	return cap(p.b)
+}
+
+func (p *BinaryBuffer) Bytes() []byte {
+	return p.b[p.r:p.w]
+}
+
+func (p *BinaryBuffer) IsOpen() bool {
+	return len(p.b) != 0
+}
+
+func (p *BinaryBuffer) Open() (err error) {
+	return nil
+}
+
+func (p *BinaryBuffer) Close() (err error) {
+	p.Free()
+	return nil
+}
+
+func (p *BinaryBuffer) Flush(ctx context.Context) error {
+	return nil
+}
+
+func (p *BinaryBuffer) RemainingBytes() (uint64) {
+	return uint64(p.w - p.r)
 }

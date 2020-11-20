@@ -1,11 +1,11 @@
 package thrift_opt
 
 import (
+	"context"
 	"fmt"
 	"unsafe"
 
-	"git.apache.org/thrift.git/lib/go/thrift"
-	"github.com/buptbill220/gooptlib/gooptlib"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 // 保证buffer不被reuse，为了较少拷贝，string, byte字段直接使用buffer
@@ -120,7 +120,7 @@ func (p *TFastFrameBinaryProtocol) WriteFieldBegin(name string, typeId thrift.TT
 	// 3 + 1 => typeid, seqid, stop
 	valSize := GetTTypeSize(typeId) + 3 + 1
 	if rwIdx+valSize > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, valSize)
+		GrowSlice(&buffer.b, rwIdx, valSize)
 	}
 	buffer.b[rwIdx] = byte(typeId)
 	buffer.b[rwIdx+1] = byte(id >> 8)
@@ -139,7 +139,7 @@ func (p *TFastFrameBinaryProtocol) WriteFieldStop() error {
 	/*
 	// 这里不做，放在WriteFieldBegin提前预估
 	if rwIdx+1 > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, 1)
+		strings.GrowSlice(&buffer.b, rwIdx, 1)
 	}
 	*/
 	buffer.b[rwIdx] = thrift.STOP
@@ -153,7 +153,7 @@ func (p *TFastFrameBinaryProtocol) WriteMapBegin(keyType thrift.TType, valueType
 	// 提前预估map可能的大小，提前分配好; 6 => ktype, vtyle, size; 8考虑到可能map<int64, map>情况，需要把该map前置key考虑进去
 	valSize := (GetTTypeSize(keyType) + GetTTypeSize(valueType)) * size + 6 + 8
 	if rwIdx+valSize > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, valSize)
+		GrowSlice(&buffer.b, rwIdx, valSize)
 	}
 
 	buffer.b[rwIdx] = byte(keyType)
@@ -177,7 +177,7 @@ func (p *TFastFrameBinaryProtocol) WriteListBegin(elemType thrift.TType, size in
 	// 提前预估list可能的大小，提前分配好; 5 => vtyle, size; 8考虑到可能map<int64, list>情况，需要把该list前置key考虑进去
 	valSize := GetTTypeSize(elemType) * size + 5 + 8
 	if rwIdx+valSize > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, valSize)
+		GrowSlice(&buffer.b, rwIdx, valSize)
 	}
 	buffer.b[rwIdx] = byte(elemType)
 	val := uint32(size)
@@ -202,7 +202,7 @@ func (p *TFastFrameBinaryProtocol) WriteSetEnd() error {
 }
 
 func (p *TFastFrameBinaryProtocol) WriteBool(value bool) error {
-	return p.WriteByte(int8(gooptlib.Bool2Byte(value)))
+	return p.WriteByte(Bool2Byte(value))
 }
 
 func (p *TFastFrameBinaryProtocol) WriteByte(value int8) error {
@@ -265,7 +265,7 @@ func (p *TFastFrameBinaryProtocol) WriteString(value string) error {
 		growLen += len(value)
 	}
 	if rwIdx+growLen > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, growLen)
+		GrowSlice(&buffer.b, rwIdx, growLen)
 	}
 	val := uint32(len(value))
 	buffer.b[rwIdx] = byte(val >> 24)
@@ -274,7 +274,7 @@ func (p *TFastFrameBinaryProtocol) WriteString(value string) error {
 	buffer.b[rwIdx+3] = byte(val)
 	buffer.rwIdx += 4
 	if isBigData {
-		p.wBigData = gooptlib.Str2Bytes(value)
+		p.wBigData = Str2Bytes(value)
 		p.wBigDataPos = buffer.rwIdx
 	} else {
 		buffer.rwIdx += copy(buffer.b[rwIdx + 4:], value)
@@ -292,7 +292,7 @@ func (p *TFastFrameBinaryProtocol) WriteBinary(value []byte) error {
 		growLen += len(value)
 	}
 	if rwIdx+growLen > cap(buffer.b) {
-		gooptlib.GrowSlice(&buffer.b, rwIdx, growLen)
+		GrowSlice(&buffer.b, rwIdx, growLen)
 	}
 	val := uint32(len(value))
 	buffer.b[rwIdx] = byte(val >> 24)
@@ -465,7 +465,7 @@ func (p *TFastFrameBinaryProtocol) ReadString() (value string, err error) {
 	}
 	// 注意这里，不再make，业务层保证buf不会reuse；大内存buf不需要reuse
 	rwIdx := buffer.rwIdx
-	value = gooptlib.Bytes2Str(buffer.b[rwIdx : rwIdx+int(size)])
+	value = Bytes2Str(buffer.b[rwIdx : rwIdx+int(size)])
 	buffer.rwIdx += int(size)
 	return
 }
@@ -484,7 +484,7 @@ func (p *TFastFrameBinaryProtocol) ReadBinary() (value []byte, err error) {
 	return
 }
 
-func (p *TFastFrameBinaryProtocol) Flush() (err error) {
+func (p *TFastFrameBinaryProtocol) Flush(ctx context.Context) (err error) {
 	buffer := p.wBuf
 	totalSize := buffer.rwIdx + len(p.wBigData)
 	frameSize := totalSize - 4
@@ -496,7 +496,7 @@ func (p *TFastFrameBinaryProtocol) Flush() (err error) {
 
 	wPos := 0
     	i := 0
-	count := gooptlib.Min((totalSize >> 15) + smallWriteCount, maxWriteCount)
+	count := Min((totalSize >> 15) + smallWriteCount, maxWriteCount)
 	if p.wBigDataPos == 0 {
 		for err == nil && wPos < totalSize && count > 0 {
 			i, err = p.t.Write(buffer.b[wPos:buffer.rwIdx])
@@ -518,7 +518,7 @@ func (p *TFastFrameBinaryProtocol) Flush() (err error) {
 		}
 	}
 
-	p.t.Flush()
+	p.t.Flush(ctx)
 	p.ResetWriter()
 	if count <= 0 {
 		err = rwCountError
@@ -540,7 +540,7 @@ func (p *TFastFrameBinaryProtocol) readStringBody(size int) (value string, err e
 	}
 	buffer := p.rBuf
 	rwIdx := buffer.rwIdx
-	value = gooptlib.Bytes2Str(buffer.b[rwIdx : rwIdx+size])
+	value = Bytes2Str(buffer.b[rwIdx : rwIdx+size])
 	buffer.rwIdx += size
 	return
 }
@@ -583,7 +583,7 @@ func (p *TFastFrameBinaryProtocol) ReadFrame() (err error) {
 	}
 	buffer.rwIdx = 4
 
-	count = gooptlib.Min(((buffer.frameSize+4) >> 15) + middleReadCount, maxReadCount)
+	count = Min(((buffer.frameSize+4) >> 15) + middleReadCount, maxReadCount)
 	for err == nil && rPos < buffer.frameSize+4 && count > 0 {
 		rPos_1, err = p.t.Read(buffer.b[rPos:])
 		rPos += rPos_1
